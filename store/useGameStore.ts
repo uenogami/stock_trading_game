@@ -94,27 +94,38 @@ export const useGameStore = create<GameState>((set, get) => ({
   loadInitialData: async (userId: string) => {
     set({ isLoading: true });
     try {
-      // ユーザー情報を取得
-      const userRes = await fetch(`/api/users/${userId}`);
+      // 3つのAPIリクエストを並列実行して高速化
+      const [userRes, stocksRes, timelineRes] = await Promise.all([
+        fetch(`/api/users/${userId}`),
+        fetch('/api/stocks'),
+        fetch('/api/timeline?limit=100'),
+      ]);
+
+      // エラーチェック
       if (!userRes.ok) {
         throw new Error('Failed to load user data');
       }
-      const userData = await userRes.json();
-
-      // 株価情報を取得
-      const stocksRes = await fetch('/api/stocks');
       if (!stocksRes.ok) {
         throw new Error('Failed to load stocks data');
       }
-      const stocksData = await stocksRes.json();
-
-      // タイムラインポストを取得
-      const timelineRes = await fetch('/api/timeline?limit=100');
       if (!timelineRes.ok) {
         throw new Error('Failed to load timeline data');
       }
-      const timelineData = await timelineRes.json();
 
+      // JSONを並列でパース
+      const [userData, stocksData, timelineData] = await Promise.all([
+        userRes.json(),
+        stocksRes.json(),
+        timelineRes.json(),
+      ]);
+      
+      // 取引履歴がない場合（リセット後）、ゲーム開始時刻をリセット
+      const hasTrades = stocksData.stocks?.some((s: Stock) => s.volume > 0) || timelineData.posts?.length > 0;
+      if (!hasTrades) {
+        // ゲーム開始時刻を現在時刻にリセット
+        localStorage.setItem('gameStartTime', new Date().toISOString());
+      }
+      
       // ストアを更新
       set({
         user: {
@@ -240,13 +251,15 @@ export const useGameStore = create<GameState>((set, get) => ({
     const { stocks } = get();
     const existingStock = stocks.find((s) => s.symbol === updatedStock.symbol);
     
-    // 既存のチャートデータと説明文を保持
+    // 新しいチャートデータが提供されている場合はそれを使用、なければ既存のものを保持
     const updatedStocks = stocks.map((s) =>
       s.symbol === updatedStock.symbol
         ? {
             ...updatedStock,
-            chartSeries: existingStock?.chartSeries || updatedStock.chartSeries,
-            description: existingStock?.description || updatedStock.description,
+            chartSeries: updatedStock.chartSeries?.length > 0 
+              ? updatedStock.chartSeries 
+              : (existingStock?.chartSeries || []),
+            description: updatedStock.description || existingStock?.description || "",
           }
         : s
     );
@@ -401,9 +414,11 @@ export const useGameStore = create<GameState>((set, get) => ({
         return;
       }
 
-      // 成功したらストアを更新（APIから返ってきたデータを使う）
-      // 実際のデータはリアルタイム同期で更新されるので、ここではクールダウンだけ更新
+      // 成功したらクールダウンを更新
       set({ lastTradeTime: Date.now() });
+      
+      // ユーザー情報と株価を即座に更新（リアルタイム更新を待たない）
+      await get().loadInitialData(userId);
     } catch (error) {
       console.error('Buy stock error:', error);
       alert('取引に失敗しました');
@@ -437,9 +452,11 @@ export const useGameStore = create<GameState>((set, get) => ({
         return;
       }
 
-      // 成功したらストアを更新（APIから返ってきたデータを使う）
-      // 実際のデータはリアルタイム同期で更新されるので、ここではクールダウンだけ更新
+      // 成功したらクールダウンを更新
       set({ lastTradeTime: Date.now() });
+      
+      // ユーザー情報と株価を即座に更新（リアルタイム更新を待たない）
+      await get().loadInitialData(userId);
     } catch (error) {
       console.error('Sell stock error:', error);
       alert('取引に失敗しました');

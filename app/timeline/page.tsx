@@ -93,13 +93,6 @@ export default function TimelinePage() {
             ))
           )}
         </div>
-
-        <Link
-          href="/"
-          className="block mt-6 text-center text-blue-600 hover:text-blue-800 underline"
-        >
-          ← ホームに戻る
-        </Link>
       </main>
     </div>
   );

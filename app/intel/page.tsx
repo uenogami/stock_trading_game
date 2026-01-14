@@ -90,15 +90,6 @@ export default function IntelPage() {
             </div>
           ))}
         </div>
-
-        <div className="mt-6">
-          <Link
-            href="/"
-            className="text-blue-600 hover:text-blue-800 underline"
-          >
-            ← ホームに戻る
-          </Link>
-        </div>
       </main>
     </div>
   );

@@ -4,20 +4,26 @@ import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import TopNavigation from "@/components/TopNavigation";
+import AuthGuard from "@/components/AuthGuard";
 import { useGameStore } from "@/store/useGameStore";
 import { gameRules } from "@/config";
 import { getLocalUserId } from "@/lib/localAuth";
 
-export default function StockDetailPage() {
+function StockDetailContent() {
   const params = useParams();
   const router = useRouter();
   const symbol = params.symbol as string;
 
-  const { user, stocks, buyStock, sellStock, getCooldownRemaining } = useGameStore();
+  const user = useGameStore((state) => state.user);
+  const stocks = useGameStore((state) => state.stocks);
+  const buyStock = useGameStore((state) => state.buyStock);
+  const sellStock = useGameStore((state) => state.sellStock);
+  const getCooldownRemaining = useGameStore((state) => state.getCooldownRemaining);
+  
   const stock = stocks.find((s) => s.symbol === symbol);
   const stockRule = gameRules.stocks.find((s) => s.symbol === symbol);
 
-  const [quantity, setQuantity] = useState<string>("1");
+  const [quantity, setQuantity] = useState<string>("");
   const [activeTab, setActiveTab] = useState<"buy" | "sell">("buy");
   
   // クールダウン残り時間をリアルタイムで表示（1秒ごとに更新）
@@ -62,26 +68,22 @@ export default function StockDetailPage() {
 
   const handleBuy = async () => {
     if (canBuy) {
-      await buyStock(symbol, qtyNum);
-      setQuantity("1");
-      // データを再読み込み（リアルタイム同期が実装されるまでの暫定対応）
-      const userId = getLocalUserId();
-      if (userId) {
-        const { loadInitialData } = useGameStore.getState();
-        await loadInitialData(userId);
+      const confirmMessage = `${stock.name}を${qtyNum}株、${totalCost}pで購入しますか？`;
+      if (window.confirm(confirmMessage)) {
+        await buyStock(symbol, qtyNum);
+        setQuantity("");
+        // リアルタイム同期で自動更新されるので、再読み込みは不要
       }
     }
   };
 
   const handleSell = async () => {
     if (canSell) {
-      await sellStock(symbol, qtyNum);
-      setQuantity("1");
-      // データを再読み込み（リアルタイム同期が実装されるまでの暫定対応）
-      const userId = getLocalUserId();
-      if (userId) {
-        const { loadInitialData } = useGameStore.getState();
-        await loadInitialData(userId);
+      const confirmMessage = `${stock.name}を${qtyNum}株、${totalCost}pで売却しますか？`;
+      if (window.confirm(confirmMessage)) {
+        await sellStock(symbol, qtyNum);
+        setQuantity("");
+        // リアルタイム同期で自動更新されるので、再読み込みは不要
       }
     }
   };
@@ -109,7 +111,7 @@ export default function StockDetailPage() {
               </span>
             </div>
             <div className="flex justify-between items-center mb-2">
-              <span className="text-gray-600">24h変化率</span>
+              <span className="text-gray-600">開始時変化率</span>
               <span
                 className={`font-semibold ${
                   stock.change24h >= 0 ? "text-green-600" : "text-red-600"
@@ -191,7 +193,7 @@ export default function StockDetailPage() {
                   value={quantity}
                   onChange={(e) => setQuantity(e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                  placeholder="数量を入力"
+                  placeholder="株数を半角で入力"
                 />
                 <div className="mt-2 text-sm text-gray-600">
                   <p>
@@ -237,7 +239,7 @@ export default function StockDetailPage() {
                   value={quantity}
                   onChange={(e) => setQuantity(e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
-                  placeholder="数量を入力"
+                  placeholder="株数を半角で入力"
                 />
                 <div className="mt-2 text-sm text-gray-600">
                   <p>
@@ -308,22 +310,16 @@ export default function StockDetailPage() {
             現在、発表予定のイベントはありません。
           </p>
         </div>
-
-        {/* 市場の噂 */}
-        <div className="bg-gray-50 rounded-lg p-4">
-          <h2 className="text-lg font-semibold mb-2">市場の噂</h2>
-          <p className="text-sm text-gray-600">
-            タイムラインで最新の情報を確認してください。
-          </p>
-          <Link
-            href="/timeline"
-            className="text-blue-600 hover:text-blue-800 underline text-sm mt-2 inline-block"
-          >
-            タイムラインを見る →
-          </Link>
-        </div>
       </main>
     </div>
+  );
+}
+
+export default function StockDetailPage() {
+  return (
+    <AuthGuard>
+      <StockDetailContent />
+    </AuthGuard>
   );
 }
 

@@ -14,15 +14,18 @@ export default function TimeRemaining() {
     const totalMinutes = gameRules.playTime;
     
     const updateTime = () => {
-      // ゲーム開始時刻を取得（ローカルストレージから、または固定値）
-      // 簡易版：現在時刻から90分前を開始時刻とする
+      // ゲーム開始時刻を取得（ローカルストレージから）
       const startTime = localStorage.getItem('gameStartTime');
-      const gameStart = startTime ? new Date(startTime) : new Date(Date.now() - (totalMinutes - 90) * 60 * 1000);
       
+      // 開始時刻がない場合は、現在時刻を開始時刻として設定
       if (!startTime) {
-        localStorage.setItem('gameStartTime', gameStart.toISOString());
+        const now = new Date();
+        localStorage.setItem('gameStartTime', now.toISOString());
+        setTimeRemaining({ minutes: totalMinutes, seconds: 0 });
+        return;
       }
-
+      
+      const gameStart = new Date(startTime);
       const now = new Date();
       const elapsed = (now.getTime() - gameStart.getTime()) / 1000; // 経過時間（秒）
       const remaining = totalMinutes * 60 - elapsed; // 残り時間（秒）
@@ -45,7 +48,7 @@ export default function TimeRemaining() {
   }, []);
 
   return (
-    <div className="px-4 py-2 rounded-lg text-sm font-bold bg-gradient-to-r from-orange-400 to-red-500 text-white shadow-md min-w-[120px] text-center">
+    <div className="px-5 py-2 rounded-lg text-base font-bold bg-gradient-to-r from-orange-400 to-red-500 text-white shadow-md text-center whitespace-nowrap">
       <span className="text-xs font-normal opacity-90">残り</span> {timeRemaining.minutes}分{timeRemaining.seconds}秒
     </div>
   );

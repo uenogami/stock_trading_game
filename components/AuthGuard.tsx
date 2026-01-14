@@ -28,7 +28,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       setReady(true);
     };
     init();
-  }, [router, pathname, setUserIdentity, loadInitialData]);
+  }, [router, pathname]);
 
   if (!ready || isLoading) {
     return (

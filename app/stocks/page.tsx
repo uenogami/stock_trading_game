@@ -2,12 +2,32 @@
 
 import Link from "next/link";
 import TopNavigation from "@/components/TopNavigation";
+import AuthGuard from "@/components/AuthGuard";
 import { useGameStore } from "@/store/useGameStore";
 import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip } from "recharts";
 import { gameRules } from "@/config";
 
-export default function StocksPage() {
-  const { stocks, user } = useGameStore();
+function StocksContent() {
+  const stocks = useGameStore((state) => state.stocks);
+  const user = useGameStore((state) => state.user);
+  const isLoading = useGameStore((state) => state.isLoading);
+
+  // ローディング中は表示しない
+  if (isLoading || stocks.length === 0) {
+    return (
+      <div className="min-h-screen bg-white">
+        <div className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-200">
+          <TopNavigation />
+        </div>
+        <main className="pt-20 max-w-md mx-auto px-4 py-6 flex items-center justify-center min-h-screen">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">データを読み込み中...</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-white">
@@ -23,10 +43,10 @@ export default function StocksPage() {
             const holdingsValue = holdings * stock.price;
             const stockRule = gameRules.stocks.find((s) => s.symbol === stock.symbol);
             
-            // チャートデータを準備（日付を短縮表示）
+            // チャートデータを準備（時間ベース）
             const chartData = stock.chartSeries.map((item) => ({
               ...item,
-              date: new Date(item.time).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' }),
+              date: item.time, // 既に「X分」形式になっている
             }));
             
             return (
@@ -51,7 +71,7 @@ export default function StocksPage() {
                       }`}
                     >
                       {stock.change24h >= 0 ? "+" : ""}
-                      {stock.change24h}%
+                      {stock.change24h}%<span className="text-xs text-gray-500">（開始時比）</span>
                     </p>
                   </div>
                 </div>
@@ -95,8 +115,11 @@ export default function StocksPage() {
                       <LineChart data={chartData}>
                         <XAxis 
                           dataKey="date" 
-                          tick={{ fontSize: 10 }}
-                          interval="preserveStartEnd"
+                          tick={{ fontSize: 9 }}
+                          interval={Math.floor(chartData.length / 8)} // 適切な間隔で表示
+                          angle={-45}
+                          textAnchor="end"
+                          height={50}
                         />
                         <YAxis 
                           tick={{ fontSize: 10 }}
@@ -105,6 +128,7 @@ export default function StocksPage() {
                         />
                         <Tooltip 
                           formatter={(value: number) => [`${value}p`, '価格']}
+                          labelFormatter={(label: string) => `経過時間: ${label}`}
                           labelStyle={{ fontSize: 12 }}
                         />
                         <Line 
@@ -145,17 +169,16 @@ export default function StocksPage() {
             );
           })}
         </div>
-
-        <div className="mt-6">
-          <Link
-            href="/"
-            className="text-blue-600 hover:text-blue-800 underline"
-          >
-            ← ホームに戻る
-          </Link>
-        </div>
       </main>
     </div>
+  );
+}
+
+export default function StocksPage() {
+  return (
+    <AuthGuard>
+      <StocksContent />
+    </AuthGuard>
   );
 }
 

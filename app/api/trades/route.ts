@@ -137,21 +137,21 @@ export async function POST(request: NextRequest) {
     }
 
     // 株価を更新（買い注文数 - 売り注文数の差分 × 係数）
-    const { data: recentTrades } = await supabase
+    // 全期間の取引履歴を集計（24時間制限を削除）
+    const { data: allTrades } = await supabase
       .from('trades')
       .select('type, quantity')
       .eq('symbol', symbol)
-      .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
 
     let buyCount = 0
     let sellCount = 0
-    recentTrades?.forEach((t) => {
+    allTrades?.forEach((t) => {
       if (t.type === 'buy') buyCount += t.quantity
       else sellCount += t.quantity
     })
 
     const priceChange = (buyCount - sellCount) * stock.coefficient
-    const newPrice = stock.initial_price + priceChange
+    const newPrice = Math.max(1, stock.initial_price + priceChange) // 最低1p
 
     await supabase
       .from('stocks')

@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import TopNavigation from "@/components/TopNavigation";
 import { getLocalUserId, getLocalUsername, setLocalUserId, setLocalUsername } from "@/lib/localAuth";
 
@@ -76,10 +75,10 @@ export default function LoginPage() {
       <main className="pt-20 max-w-md mx-auto w-full px-4 h-full overflow-hidden bg-gradient-to-b from-blue-50 to-indigo-50">
         <div className="bg-white rounded-xl shadow-lg border border-blue-100 p-6">
           <h1 className="text-xl font-bold text-gray-900 mb-2">
-            ログイン
+            入場
           </h1>
           <p className="text-sm text-gray-600 mb-4">
-            ユーザー名と4桁のパスワードでログイン
+            ユーザー名と4桁のパスワードを入力してください
           </p>
 
           {error && (
@@ -106,7 +105,7 @@ export default function LoginPage() {
                 パスワード（4桁の数字）
               </label>
               <input
-                type="password"
+                type="text"
                 value={password}
                 onChange={(e) => setPassword(e.target.value.replace(/\D/g, "").slice(0, 4))}
                 placeholder="0000"
@@ -118,20 +117,11 @@ export default function LoginPage() {
               </p>
             </div>
 
-            <div className="pt-2">
-              <Link
-                href="/signup"
-                className="text-sm text-blue-600 hover:text-blue-800 underline"
-              >
-                新規登録はこちら
-              </Link>
-            </div>
-
             <button
               type="submit"
               className="w-full bg-gradient-to-b from-blue-500 to-blue-600 text-white px-4 py-3 rounded-lg text-center font-semibold hover:from-blue-600 hover:to-blue-700 active:scale-95 transition-all shadow-md hover:shadow-lg border border-blue-700/20"
             >
-              参加する
+              入場する
             </button>
           </form>
         </div>

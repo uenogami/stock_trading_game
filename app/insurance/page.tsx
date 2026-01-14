@@ -58,15 +58,6 @@ export default function InsurancePage() {
             ? `保険を発動するには総資産を${1000 - totalAsset}p減らす必要があります`
             : "2,000p付与（保険発動）"}
         </button>
-
-        <div className="mt-6">
-          <Link
-            href="/"
-            className="text-blue-600 hover:text-blue-800 underline"
-          >
-            ← ホームに戻る
-          </Link>
-        </div>
       </main>
     </div>
   );
