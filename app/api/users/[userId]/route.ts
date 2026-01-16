@@ -34,15 +34,9 @@ export async function GET(
         name: user.name,
         cash: user.cash,
         holdings: user.holdings || {},
-        totalAsset: user.cash + Object.entries(user.holdings || {}).reduce(
-          (sum, [symbol, qty]: [string, any]) => {
-            // 株価は別途取得する必要があるが、簡易的に0で計算
-            return sum + (qty || 0) * 0
-          },
-          0
-        ),
+        totalAsset: user.cash,
         delta24h: 0,
-        buyCount: 0, // TODO: 取引履歴から計算
+        buyCount: 0,
         insuranceUsed: user.insurance_used || false,
       },
       lastTradeTime: lastTrade ? new Date(lastTrade.created_at).getTime() : null,

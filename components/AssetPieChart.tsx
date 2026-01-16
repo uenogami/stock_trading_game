@@ -9,7 +9,19 @@ interface AssetPieChartProps {
   stockNames?: { [symbol: string]: string }; // 銘柄名のマップ
 }
 
-const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884d8"];
+// 柔らかい配色：現金（黄色）、インフラテック（青色）、ネクストラ（赤色）
+const COLORS: { [key: string]: string } = {
+  "現金": "#fbbf24", // 柔らかい黄色
+  "インフラテック": "#60a5fa", // 柔らかい青
+  "ネクストラ": "#f87171", // 柔らかい赤
+};
+
+// 文字色のマッピング（背景色に応じて読みやすい色を選択）
+const TEXT_COLORS: { [key: string]: string } = {
+  "現金": "#1f2937", // 黄色背景には濃いグレー（黒に近い）
+  "インフラテック": "#1f2937", // 青色背景には白色
+  "ネクストラ": "#1f2937", // 赤色背景には白色
+};
 
 // カスタムラベルコンポーネント
 const CustomLabel = ({
@@ -27,12 +39,15 @@ const CustomLabel = ({
   const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
   const x = cx + radius * Math.cos(-midAngle * RADIAN);
   const y = cy + radius * Math.sin(-midAngle * RADIAN);
+  
+  // 名前に対応する文字色を取得
+  const textColor = TEXT_COLORS[name] || "#ffffff";
 
   return (
     <text
       x={x}
       y={y}
-      fill="white"
+      fill={textColor}
       textAnchor="middle"
       dominantBaseline="central"
       fontSize={14}
@@ -74,12 +89,16 @@ export default function AssetPieChart({
             fill="#8884d8"
             dataKey="value"
           >
-            {data.map((entry, index) => (
-              <Cell
-                key={`cell-${index}`}
-                fill={COLORS[index % COLORS.length]}
-              />
-            ))}
+            {data.map((entry, index) => {
+              // 名前から色を取得、なければデフォルト色を使用
+              const color = COLORS[entry.name] || "#94a3b8";
+              return (
+                <Cell
+                  key={`cell-${index}`}
+                  fill={color}
+                />
+              );
+            })}
           </Pie>
         </PieChart>
       </ResponsiveContainer>

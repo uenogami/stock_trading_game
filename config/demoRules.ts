@@ -1,4 +1,4 @@
-// デモプレイ版・最終ルール（90分）
+// デモプレイ版・最終ルール（60分）
 
 export interface GameRules {
   // 基本設定
@@ -43,6 +43,8 @@ export interface GameRules {
     name: string;
     price: number;
     description: string;
+    requiresPrerequisite?: boolean;
+    prerequisiteCardId?: string;
   }>;
   
   // リアルタイムイベント
@@ -54,7 +56,7 @@ export interface GameRules {
 }
 
 export const demoRules: GameRules = {
-  playTime: 90,
+  playTime: 60,
   participantCount: 10,
   
   // 初期資産
@@ -71,7 +73,7 @@ export const demoRules: GameRules = {
       name: "インフラテック",
       initialPrice: 100,
       coefficient: 0.2, // 堅実・守り
-      maxHoldings: 40,
+      maxHoldings: 100,
       description: "インフラテックは長年にわたり安定した事業を展開してきた企業です。新情報が出ても、市場は慎重に反応します。",
       flavor: {
         type: "老舗企業",
@@ -84,7 +86,7 @@ export const demoRules: GameRules = {
       name: "ネクストラ",
       initialPrice: 100,
       coefficient: 0.6, // 挑戦的・荒れやすい
-      maxHoldings: 30,
+      maxHoldings: 100,
       description: "ネクストラは挑戦的な戦略を取る企業です。市場の期待と失望が、株価に大きく反映されます。",
       flavor: {
         type: "スタートアップ",
@@ -96,7 +98,7 @@ export const demoRules: GameRules = {
   
   // 売買ルール
   trading: {
-    cooldownMinutes: 1,
+    cooldownMinutes: 10 / 60, // 10秒（分単位）
     hasFee: false,
   },
   
@@ -111,54 +113,89 @@ export const demoRules: GameRules = {
   cards: [
     {
       id: "anonymous-trade",
-      name: "匿名売買ログカード",
-      price: 1500,
+      name: "匿名売買",
+      price: 1000,
       description: "次の1回の売買ログが「匿名ユーザー」表記になる",
     },
     {
       id: "fake-info",
-      name: "偽情報投稿カード",
+      name: "偽売買",
+      price: 1000,
+      description: "売買ログ風の偽情報を1回投稿可能",
+    },
+    {
+      id: "hide-prices",
+      name: "株価非表示",
       price: 1500,
-      description: "売買ログ風の偽情報を1回投稿可能（「未確認情報」タグ付き）",
+      description: "発動時、全員（発動者含む）が2分間、株価が見れなくなる",
+      requiresPrerequisite: false,
+    },
+    {
+      id: "max-holdings-plus",
+      name: "保有株数上限増加",
+      price: 1500,
+      description: "ゲーム中保有株式の上限が＋10株（恒久）",
+      requiresPrerequisite: false,
+    },
+    {
+      id: "cash-multiplier",
+      name: "現金倍増",
+      price: 1000,
+      description: "終了時の現金に1.1倍",
+      requiresPrerequisite: false,
+    },
+    {
+      id: "rank-difference",
+      name: "資産差表示",
+      price: 1000,
+      description: "自分の上、下の順位のプレーヤーとの資産差を見れる（一度きり）",
+      requiresPrerequisite: false,
+    },
+    {
+      id: "rank-difference-always",
+      name: "資産差表示（常時）",
+      price: 1000,
+      description: "自分の上、下の順位のプレーヤーとの資産差を見れる（常時）",
+      requiresPrerequisite: true,
+      prerequisiteCardId: "rank-difference",
     },
     {
       id: "rank-visibility",
-      name: "順位常時可視化カード",
+      name: "順位可視化（常時）",
       price: 2000,
       description: "自分の順位をリアルタイムで確認可能（通常は20分ごとにしか順位確認不可）",
-    },
-    {
-      id: "debt-reversal",
-      name: "負債反転カード",
-      price: 2000,
-      description: "発動後5分間、確定損益のみ反転（マイナス→プラス、プラス→マイナス）",
     },
   ],
   
   // リアルタイムイベント
   events: [
     {
-      time: 20,
+      time: 10,
       description: "自分の順位確認",
       effects: ["順位確認可能"],
     },
     {
+      time: 20,
+      description: "自分の上下順位との資産差確認",
+      effects: ["順位差確認可能"],
+    },
+    {
+      time: 30,
+      description: "全体の順位のみ確認（保有資産は非表示）",
+      effects: ["全体順位確認可能"],
+    },
+    {
       time: 40,
-      description: "自分の順位確認 + 保有現金1.2倍イベント",
-      effects: ["順位確認可能", "現金1.2倍"],
+      description: "保有現金×1.2倍イベント",
+      effects: ["現金1.2倍"],
+    },
+    {
+      time: 50,
+      description: "自分の順位と上下順位との資産差確認",
+      effects: ["順位確認可能", "順位差確認可能"],
     },
     {
       time: 60,
-      description: "下位プレイヤーがリークを持っている（信憑性のみ付与）",
-      effects: ["情報共有"],
-    },
-    {
-      time: 80,
-      description: "ラストスパート告知",
-      effects: ["告知"],
-    },
-    {
-      time: 90,
       description: "ゲーム終了",
       effects: ["終了"],
     },

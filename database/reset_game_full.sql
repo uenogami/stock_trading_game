@@ -8,11 +8,12 @@ DELETE FROM trades;
 -- 2. タイムラインポストを全て削除
 DELETE FROM timeline_posts;
 
--- 3. 株価を初期値にリセット
+-- 3. 株価を初期値にリセット、最大保有数を100株に更新
 UPDATE stocks SET 
   price = initial_price,
   change24h = 0,
   volume = 0,
+  max_holdings = 100,
   updated_at = NOW()
 WHERE symbol IN ('A', 'B');
 

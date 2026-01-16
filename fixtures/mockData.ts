@@ -17,7 +17,7 @@ export interface Stock {
   price: number;
   change24h: number;
   volume: number;
-  chartSeries: Array<{ time: string; price: number }>;
+  chartSeries: Array<{ time: string; price: number; minute: number }>;
   coefficient: number; // 価格変動係数
   maxHoldings: number; // 最大保有数
   description: string; // 説明文
@@ -27,7 +27,7 @@ export interface TimelinePost {
   id: string;
   userId: string;
   userName: string;
-  type: 'rumor' | 'analysis' | 'claim' | 'trade-log';
+  type: 'rumor' | 'analysis' | 'claim' | 'trade-log' | 'tweet' | 'system';
   text: string;
   createdAt: string;
 }

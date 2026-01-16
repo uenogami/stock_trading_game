@@ -10,6 +10,7 @@ export interface Database {
           cash: number
           holdings: { [symbol: string]: number }
           insurance_used: boolean
+          password_hash: string | null
           created_at: string
           updated_at: string
         }
@@ -20,6 +21,7 @@ export interface Database {
           cash: number
           holdings?: { [symbol: string]: number }
           insurance_used?: boolean
+          password_hash?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -30,6 +32,7 @@ export interface Database {
           cash?: number
           holdings?: { [symbol: string]: number }
           insurance_used?: boolean
+          password_hash?: string | null
           updated_at?: string
         }
       }
@@ -101,7 +104,7 @@ export interface Database {
           id: string
           user_id: string
           user_name: string
-          type: 'rumor' | 'analysis' | 'claim' | 'trade-log'
+          type: 'rumor' | 'analysis' | 'claim' | 'trade-log' | 'tweet' | 'system'
           text: string
           created_at: string
         }
@@ -109,7 +112,7 @@ export interface Database {
           id?: string
           user_id: string
           user_name: string
-          type: 'rumor' | 'analysis' | 'claim' | 'trade-log'
+          type: 'rumor' | 'analysis' | 'claim' | 'trade-log' | 'tweet' | 'system'
           text: string
           created_at?: string
         }
@@ -117,7 +120,7 @@ export interface Database {
           id?: string
           user_id?: string
           user_name?: string
-          type?: 'rumor' | 'analysis' | 'claim' | 'trade-log'
+          type?: 'rumor' | 'analysis' | 'claim' | 'trade-log' | 'tweet' | 'system'
           text?: string
         }
       }

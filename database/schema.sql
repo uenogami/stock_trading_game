@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS users (
   cash INTEGER NOT NULL DEFAULT 5000,
   holdings JSONB DEFAULT '{}'::jsonb,
   insurance_used BOOLEAN DEFAULT FALSE,
+  password_hash TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -41,10 +42,15 @@ CREATE TABLE IF NOT EXISTS timeline_posts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   user_name TEXT NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('rumor', 'analysis', 'claim', 'trade-log')),
+  type TEXT NOT NULL CHECK (type IN ('rumor', 'analysis', 'claim', 'trade-log', 'tweet')),
   text TEXT NOT NULL,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- 既存のテーブルの制約を更新（既にテーブルが存在する場合）
+ALTER TABLE timeline_posts DROP CONSTRAINT IF EXISTS timeline_posts_type_check;
+ALTER TABLE timeline_posts ADD CONSTRAINT timeline_posts_type_check 
+  CHECK (type IN ('rumor', 'analysis', 'claim', 'trade-log', 'tweet', 'system'));
 
 -- ユーザーカードテーブル
 CREATE TABLE IF NOT EXISTS user_cards (
@@ -72,7 +78,7 @@ ALTER PUBLICATION supabase_realtime ADD TABLE trades;
 
 -- 初期データ（銘柄）
 INSERT INTO stocks (symbol, name, price, coefficient, max_holdings, initial_price) VALUES
-  ('A', 'インフラテック', 100, 0.2, 40, 100),
-  ('B', 'ネクストラ', 100, 0.6, 30, 100)
+  ('A', 'インフラテック', 100, 0.2, 100, 100),
+  ('B', 'ネクストラ', 100, 0.6, 100, 100)
 ON CONFLICT (symbol) DO NOTHING;
 

@@ -16,6 +16,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid parameters' }, { status: 400 })
     }
 
+    // ゲーム終了チェック（60分経過後は取引不可）
+    const { data: firstTrade } = await supabase
+      .from('trades')
+      .select('created_at')
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+
+    if (firstTrade) {
+      const gameStartTime = new Date(firstTrade.created_at)
+      const elapsedSeconds = (Date.now() - gameStartTime.getTime()) / 1000
+      const gameEndMinutes = 60
+
+      if (elapsedSeconds >= gameEndMinutes * 60) {
+        return NextResponse.json({ error: 'ゲームは終了しました' }, { status: 400 })
+      }
+    }
+
     // ユーザー情報を取得
     const { data: userData, error: userError } = await supabase
       .from('users')
@@ -67,9 +85,21 @@ export async function POST(request: NextRequest) {
       }
 
       const currentHoldings = userData.holdings?.[symbol] || 0
-      if (currentHoldings + quantity > stock.max_holdings) {
+      
+      // 保有上限増加カードの効果を適用（+10株）
+      const { data: maxHoldingsCard } = await supabase
+        .from('user_cards')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('card_id', 'max-holdings-plus')
+        .eq('active', true)
+        .maybeSingle()
+      
+      const effectiveMaxHoldings = stock.max_holdings + (maxHoldingsCard ? 10 : 0)
+
+      if (currentHoldings + quantity > effectiveMaxHoldings) {
         return NextResponse.json(
-          { error: 'Exceeds max holdings' },
+          { error: `Maximum holdings exceeded. Max: ${effectiveMaxHoldings}` },
           { status: 400 }
         )
       }
@@ -81,7 +111,7 @@ export async function POST(request: NextRequest) {
         [symbol]: (currentHoldings || 0) + quantity,
       }
 
-      await supabase
+      const { error: userUpdateError } = await supabase
         .from('users')
         .update({
           cash: newCash,
@@ -89,6 +119,14 @@ export async function POST(request: NextRequest) {
           updated_at: new Date().toISOString(),
         })
         .eq('id', userId)
+
+      if (userUpdateError) {
+        console.error('User update error:', userUpdateError)
+        return NextResponse.json(
+          { error: 'Failed to update user data', details: userUpdateError.message },
+          { status: 500 }
+        )
+      }
     } else if (type === 'sell') {
       const currentHoldings = userData.holdings?.[symbol] || 0
       if (currentHoldings < quantity) {
@@ -106,7 +144,7 @@ export async function POST(request: NextRequest) {
         [symbol]: currentHoldings - quantity,
       }
 
-      await supabase
+      const { error: userUpdateError } = await supabase
         .from('users')
         .update({
           cash: newCash,
@@ -114,6 +152,14 @@ export async function POST(request: NextRequest) {
           updated_at: new Date().toISOString(),
         })
         .eq('id', userId)
+
+      if (userUpdateError) {
+        console.error('User update error:', userUpdateError)
+        return NextResponse.json(
+          { error: 'Failed to update user data', details: userUpdateError.message },
+          { status: 500 }
+        )
+      }
     }
 
     // 取引履歴を記録
@@ -130,8 +176,9 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (tradeError) {
+      console.error('Trade insert error:', tradeError)
       return NextResponse.json(
-        { error: 'Failed to record trade' },
+        { error: 'Failed to record trade', details: tradeError.message },
         { status: 500 }
       )
     }
@@ -150,10 +197,14 @@ export async function POST(request: NextRequest) {
       else sellCount += t.quantity
     })
 
+    // initial_priceが正しく設定されていない場合に備えて、100をデフォルト値として使用
+    // ただし、initial_priceがnullやundefinedの場合は、ルールから取得
+    const basePrice = stock.initial_price ?? 100
     const priceChange = (buyCount - sellCount) * stock.coefficient
-    const newPrice = Math.max(1, stock.initial_price + priceChange) // 最低1p
+    const newPrice = Math.max(1, Math.round(basePrice + priceChange)) // 最低1p、整数に丸める
 
-    await supabase
+    // 株価を更新（エラーチェック付き）
+    const { error: updateError } = await supabase
       .from('stocks')
       .update({
         price: newPrice,
@@ -162,19 +213,52 @@ export async function POST(request: NextRequest) {
       })
       .eq('symbol', symbol)
 
-    // タイムラインに自動投稿
-    await supabase.from('timeline_posts').insert({
+    if (updateError) {
+      console.error(`[${symbol}] 株価更新エラー:`, updateError)
+      return NextResponse.json(
+        { error: 'Failed to update stock price', details: updateError.message },
+        { status: 500 }
+      )
+    }
+
+    // 匿名売買ログカードがアクティブかチェック
+    const { data: anonymousCard } = await supabase
+      .from('user_cards')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('card_id', 'anonymous-trade')
+      .eq('active', true)
+      .maybeSingle()
+
+    // タイムラインに自動投稿（エラーは無視）
+    const displayName = anonymousCard ? '匿名ユーザー' : userData.name;
+    const { error: timelineError } = await supabase.from('timeline_posts').insert({
       user_id: userId,
-      user_name: userData.name,
+      user_name: displayName,
       type: 'trade-log',
-      text: `${userData.name}が${stock.name}を${quantity}株${type === 'buy' ? '購入' : '売却'}しました`,
+      text: `${displayName}が${stock.name}を${quantity}株${type === 'buy' ? '購入' : '売却'}しました`,
     })
+
+    // 匿名カードを使用した場合、カードを無効化（1回のみ使用可能）
+    if (anonymousCard) {
+      await supabase
+        .from('user_cards')
+        .update({ active: false })
+        .eq('user_id', userId)
+        .eq('card_id', 'anonymous-trade')
+    }
+    
+    if (timelineError) {
+      console.error('Timeline post error:', timelineError)
+      // タイムライン投稿のエラーは取引を失敗させない
+    }
 
     return NextResponse.json({ success: true, trade })
   } catch (error) {
     console.error('Trade error:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error', details: errorMessage },
       { status: 500 }
     )
   }

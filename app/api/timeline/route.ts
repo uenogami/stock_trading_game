@@ -37,8 +37,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 401 })
     }
 
-    if (!type || !text) {
-      return NextResponse.json({ error: 'Invalid parameters' }, { status: 400 })
+    if (!text) {
+      return NextResponse.json({ error: 'Text is required' }, { status: 400 })
+    }
+    
+    // タイプが指定されていない場合は「tweet」として扱う
+    const postType = type || 'tweet';
+    
+    // 呟きの場合は50文字制限
+    if (postType === 'tweet' && text.length > 50) {
+      return NextResponse.json({ error: '呟きは50文字までです' }, { status: 400 })
     }
 
     // ユーザー情報を取得
@@ -53,7 +61,7 @@ export async function POST(request: NextRequest) {
       .insert({
         user_id: userId,
         user_name: userData?.name || 'Unknown',
-        type,
+        type: postType,
         text,
       })
       .select()

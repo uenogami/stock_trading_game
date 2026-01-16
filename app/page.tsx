@@ -9,7 +9,7 @@ import { useGameStore } from "@/store/useGameStore";
 
 function HomeContent() {
   // Zustandストアから状態を取得
-  const { user, stocks, calculateTotalAsset, calculateDelta24h, timelinePosts } = useGameStore();
+  const { user, stocks, calculateTotalAsset, timelinePosts } = useGameStore();
   
   // 株価マップと銘柄名マップを作成
   const stockPrices: { [symbol: string]: number } = {};
@@ -19,9 +19,8 @@ function HomeContent() {
     stockNames[stock.symbol] = stock.name;
   });
 
-  // 総資産と前日比を計算
+  // 総資産を計算
   const totalAsset = calculateTotalAsset();
-  const delta24h = calculateDelta24h();
 
   // 資産内訳を計算
   const assetBreakdown = [
@@ -36,7 +35,7 @@ function HomeContent() {
     <div className="h-screen bg-white relative">
       {/* トップナビゲーション（画面topに固定） */}
       <div className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-200">
-        <TopNavigation />
+      <TopNavigation />
       </div>
       
       {/* メインコンテンツ（トップナビゲーションとタイムラインの間） */}
@@ -74,19 +73,19 @@ function HomeContent() {
             href="/insurance"
             className="bg-gradient-to-b from-blue-500 to-blue-600 text-white px-4 py-3 rounded-lg text-center font-semibold hover:from-blue-600 hover:to-blue-700 active:scale-95 transition-all shadow-md hover:shadow-lg border border-blue-700/20"
           >
-            保険
+            保険適用
           </Link>
           <Link
             href="/stocks"
             className="bg-gradient-to-b from-green-500 to-green-600 text-white px-4 py-3 rounded-lg text-center font-semibold hover:from-green-600 hover:to-green-700 active:scale-95 transition-all shadow-md hover:shadow-lg border border-green-700/20"
           >
-            銘柄買付
+            銘柄売買
           </Link>
           <Link
             href="/intel"
             className="bg-gradient-to-b from-purple-500 to-purple-600 text-white px-4 py-3 rounded-lg text-center font-semibold hover:from-purple-600 hover:to-purple-700 active:scale-95 transition-all shadow-md hover:shadow-lg border border-purple-700/20"
           >
-            情報売買
+            能力購入
           </Link>
         </div>
       </main>

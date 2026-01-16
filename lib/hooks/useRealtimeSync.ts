@@ -3,15 +3,10 @@
 import { useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useGameStore } from "@/store/useGameStore";
-import { Stock, TimelinePost } from "@/fixtures/mockData";
 import { getLocalUserId } from "@/lib/localAuth";
 
 export function useRealtimeSync() {
-  const updateStockFromRealtime = useGameStore((state) => state.updateStockFromRealtime);
-  const addTimelinePostFromRealtime = useGameStore((state) => state.addTimelinePostFromRealtime);
-
   useEffect(() => {
-    // ログインしていない場合は何もしない
     const userId = getLocalUserId();
     if (!userId) {
       return;
@@ -19,9 +14,12 @@ export function useRealtimeSync() {
 
     const supabase = createClient();
 
+    // チャンネル名をユニークにする（ユーザーIDとタイムスタンプを使用）
+    const channelId = `stocks-${userId}-${Date.now()}`;
+
     // 株価の変更を監視
     const stocksChannel = supabase
-      .channel("stocks-changes")
+      .channel(channelId)
       .on(
         "postgres_changes",
         {
@@ -29,74 +27,47 @@ export function useRealtimeSync() {
           schema: "public",
           table: "stocks",
         },
-        (payload) => {
+        async (payload) => {
           const updatedStock = payload.new as any;
+          const { stocks, updateStockFromRealtime } = useGameStore.getState();
+          const existingStock = stocks.find((s) => s.symbol === updatedStock.symbol);
           
-          // ストアから既存の株価データを取得（チャートデータと説明文を保持するため）
-          const currentStocks = useGameStore.getState().stocks;
-          const existingStock = currentStocks.find((s) => s.symbol === updatedStock.symbol);
+          // チャートデータを更新（取引履歴に基づく最新データを取得）
+          let chartSeries = existingStock?.chartSeries || [];
+          try {
+            const stocksRes = await fetch('/api/stocks');
+            if (stocksRes.ok) {
+              const stocksData = await stocksRes.json();
+              const latestStock = stocksData.stocks?.find((s: any) => s.symbol === updatedStock.symbol);
+              if (latestStock?.chartSeries) {
+                chartSeries = latestStock.chartSeries;
+              }
+            }
+          } catch (error) {
+            // エラー時は既存のチャートデータを保持
+          }
           
-          // ストアの株価を更新（既存のチャートデータと説明文を保持）
           updateStockFromRealtime({
             symbol: updatedStock.symbol,
             name: updatedStock.name,
             price: updatedStock.price,
             change24h: updatedStock.change24h || 0,
             volume: updatedStock.volume || 0,
-            chartSeries: existingStock?.chartSeries || [], // 既存のチャートデータを保持
+            chartSeries: chartSeries,
             coefficient: updatedStock.coefficient,
             maxHoldings: updatedStock.max_holdings,
-            description: existingStock?.description || "", // 既存の説明文を保持
+            description: existingStock?.description || "",
           });
         }
       )
       .subscribe();
 
-    // 取引の追加を監視（チャートデータ更新用）
-    const tradesChannel = supabase
-      .channel("trades-changes")
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "trades",
-        },
-        async (payload) => {
-          const newTrade = payload.new as any;
-          // 取引が発生した時、該当銘柄のチャートデータを更新
-          const currentStocks = useGameStore.getState().stocks;
-          const updatedStock = currentStocks.find((s) => s.symbol === newTrade.symbol);
-          
-          if (updatedStock) {
-            // 最新のチャートデータを取得
-            try {
-              const stocksRes = await fetch('/api/stocks');
-              if (stocksRes.ok) {
-                const stocksData = await stocksRes.json();
-                const latestStock = stocksData.stocks?.find((s: Stock) => s.symbol === newTrade.symbol);
-                
-                if (latestStock) {
-                  // チャートデータを含めて更新
-                  updateStockFromRealtime({
-                    ...updatedStock,
-                    price: latestStock.price,
-                    volume: latestStock.volume,
-                    chartSeries: latestStock.chartSeries,
-                  });
-                }
-              }
-            } catch (error) {
-              console.error('Failed to update chart data:', error);
-            }
-          }
-        }
-      )
-      .subscribe();
+    // 取引の追加を監視は不要（stocksテーブルのUPDATEイベントで価格とチャートデータの両方が更新される）
 
     // タイムラインポストの追加を監視
+    const timelineChannelId = `timeline-${userId}-${Date.now()}`;
     const timelineChannel = supabase
-      .channel("timeline-posts-changes")
+      .channel(timelineChannelId)
       .on(
         "postgres_changes",
         {
@@ -106,7 +77,7 @@ export function useRealtimeSync() {
         },
         (payload) => {
           const newPost = payload.new as any;
-          // ストアにタイムラインポストを追加
+          const { addTimelinePostFromRealtime } = useGameStore.getState();
           addTimelinePostFromRealtime({
             id: newPost.id,
             userId: newPost.user_id,
@@ -119,12 +90,40 @@ export function useRealtimeSync() {
       )
       .subscribe();
 
+    // ユーザー情報の更新を監視（現金アップイベントなど）
+    const usersChannelId = `users-${userId}-${Date.now()}`;
+    const usersChannel = supabase
+      .channel(usersChannelId)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "users",
+          filter: `id=eq.${userId}`,
+        },
+        async (payload) => {
+          const updatedUser = payload.new as any;
+          const { user: currentUser } = useGameStore.getState();
+          // 既存のholdingsを保持しながら、更新された情報をマージ
+          useGameStore.setState({
+            user: {
+              ...currentUser,
+              cash: updatedUser.cash ?? currentUser.cash,
+              holdings: updatedUser.holdings || currentUser.holdings || {},
+              insuranceUsed: updatedUser.insurance_used ?? currentUser.insuranceUsed,
+            },
+          });
+        }
+      )
+      .subscribe();
+
     // クリーンアップ
     return () => {
       supabase.removeChannel(stocksChannel);
-      supabase.removeChannel(tradesChannel);
       supabase.removeChannel(timelineChannel);
+      supabase.removeChannel(usersChannel);
     };
-  }, [updateStockFromRealtime, addTimelinePostFromRealtime]);
+  }, []); // 依存配列を空にして、一度だけ実行
 }
 

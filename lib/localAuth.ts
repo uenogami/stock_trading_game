@@ -29,4 +29,3 @@ export function clearLocalUsername() {
   window.localStorage.removeItem(LOCAL_AUTH_USER_ID_KEY);
 }
 
-

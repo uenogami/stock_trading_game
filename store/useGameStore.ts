@@ -38,26 +38,27 @@ interface GameState {
     quantity: number;
     timestamp: number;
   }>;
+  gameStartTime: Date | null;
+  elapsedMinutes: number;
+  elapsedSeconds: number;
+  setGameStartTime: (time: Date | null) => void;
+  updateElapsedTime: (minutes: number, seconds: number) => void;
   // 購入アクション
   buyStock: (symbol: string, quantity: number) => void;
   // 売却アクション
   sellStock: (symbol: string, quantity: number) => void;
   // 総資産を計算
   calculateTotalAsset: () => number;
-  // 前日比を計算（簡易版：現在は固定値）
-  calculateDelta24h: () => number;
   // クールダウン残り時間を取得（秒）
   getCooldownRemaining: () => number;
   // 保険を発動
   activateInsurance: () => void;
   // カードを購入
   buyCard: (cardId: string) => void;
-  // カードを使用
-  useCard: (cardId: string) => void;
+  // カードを発動
+  activateCard: (cardId: string) => void;
   // タイムラインに投稿を追加
   addTimelinePost: (post: Omit<TimelinePost, 'id' | 'createdAt'>) => void;
-  // 株価を更新（取引履歴から計算）
-  updateStockPrice: (symbol: string) => void;
   // リアルタイム同期用：株価を更新
   updateStockFromRealtime: (stock: Stock) => void;
   // リアルタイム同期用：タイムラインポストを追加
@@ -79,6 +80,12 @@ export const useGameStore = create<GameState>((set, get) => ({
   // 初期状態
   user: { ...mockUser },
   isLoading: false,
+  // ゲーム進行時間管理（UTC基準）
+  gameStartTime: null,
+  elapsedMinutes: 0,
+  elapsedSeconds: 0,
+  setGameStartTime: (time: Date | null) => set({ gameStartTime: time }),
+  updateElapsedTime: (minutes: number, seconds: number) => set({ elapsedMinutes: minutes, elapsedSeconds: seconds }),
   setUserIdentity: (id: string, name: string) => {
     const trimmedName = name.trim();
     const trimmedId = id.trim();
@@ -94,11 +101,12 @@ export const useGameStore = create<GameState>((set, get) => ({
   loadInitialData: async (userId: string) => {
     set({ isLoading: true });
     try {
-      // 3つのAPIリクエストを並列実行して高速化
-      const [userRes, stocksRes, timelineRes] = await Promise.all([
+      // 4つのAPIリクエストを並列実行して高速化
+      const [userRes, stocksRes, timelineRes, cardsRes] = await Promise.all([
         fetch(`/api/users/${userId}`),
         fetch('/api/stocks'),
         fetch('/api/timeline?limit=100'),
+        fetch(`/api/cards?userId=${userId}`),
       ]);
 
       // エラーチェック
@@ -111,12 +119,16 @@ export const useGameStore = create<GameState>((set, get) => ({
       if (!timelineRes.ok) {
         throw new Error('Failed to load timeline data');
       }
+      if (!cardsRes.ok) {
+        throw new Error('Failed to load cards data');
+      }
 
       // JSONを並列でパース
-      const [userData, stocksData, timelineData] = await Promise.all([
+      const [userData, stocksData, timelineData, cardsData] = await Promise.all([
         userRes.json(),
         stocksRes.json(),
         timelineRes.json(),
+        cardsRes.json(),
       ]);
       
       // 取引履歴がない場合（リセット後）、ゲーム開始時刻をリセット
@@ -148,6 +160,22 @@ export const useGameStore = create<GameState>((set, get) => ({
           text: post.text,
           createdAt: post.created_at,
         })),
+        // カード情報をマージ（購入済み・アクティブ状態を反映）
+        cards: initializeCards().map((card) => {
+          const userCard = (cardsData.cards || []).find((uc: any) => uc.card_id === card.id);
+          if (userCard) {
+            const expiresAt = userCard.expires_at ? new Date(userCard.expires_at).getTime() : undefined;
+            // 有効期限切れのカードは無効化
+            const isExpired = expiresAt && Date.now() >= expiresAt;
+            return {
+              ...card,
+              purchased: userCard.purchased || false,
+              active: (userCard.active || false) && !isExpired,
+              expiresAt,
+            };
+          }
+          return card;
+        }),
         lastTradeTime: userData.lastTradeTime,
         isLoading: false,
       });
@@ -166,32 +194,29 @@ export const useGameStore = create<GameState>((set, get) => ({
   timelinePosts: [],
   cards: initializeCards(),
   lastTradeTime: null,
-  cooldownMinutes: 1, // デモ版：1分間のクールダウン
+  cooldownMinutes: gameRules.trading.cooldownMinutes, // ゲームルールから取得（10秒 = 10/60分）
   tradeHistory: [],
 
-  // 総資産を計算
+  // 総資産を計算（負債反転カードの効果を考慮）
   calculateTotalAsset: () => {
-    const { user, stocks } = get();
+    const { user, stocks, cards } = get();
     const stockPrices: { [symbol: string]: number } = {};
     stocks.forEach((stock) => {
       stockPrices[stock.symbol] = stock.price;
     });
 
-    const holdingsValue = Object.entries(user.holdings).reduce(
+    // holdingsが存在しない場合は0として扱う
+    const holdings = user.holdings || {};
+    const holdingsValue = Object.entries(holdings).reduce(
       (sum, [symbol, quantity]) => {
         return sum + quantity * (stockPrices[symbol] || 0);
       },
       0
     );
 
-    return user.cash + holdingsValue;
-  },
-
-  // 前日比を計算（簡易版）
-  calculateDelta24h: () => {
-    // 実際の実装では、前日の総資産と比較する必要があります
-    // ここでは簡易的に固定値を使用
-    return get().user.delta24h;
+    // cashがundefinedの場合は0として扱う
+    const cash = user.cash ?? 0;
+    return cash + holdingsValue;
   },
 
   // クールダウン残り時間を取得（秒）
@@ -203,47 +228,6 @@ export const useGameStore = create<GameState>((set, get) => ({
     const cooldownSeconds = cooldownMinutes * 60;
     const remaining = cooldownSeconds - elapsed;
     return Math.max(0, Math.ceil(remaining));
-  },
-
-  // 株価を更新（取引履歴から計算）
-  updateStockPrice: (symbol: string) => {
-    const { stocks, tradeHistory } = get();
-    const stock = stocks.find((s) => s.symbol === symbol);
-    if (!stock) return;
-
-    // 該当銘柄の全取引を集計
-    const symbolTrades = tradeHistory.filter((t) => t.symbol === symbol);
-    const buyCount = symbolTrades.filter((t) => t.type === 'buy').reduce((sum, t) => sum + t.quantity, 0);
-    const sellCount = symbolTrades.filter((t) => t.type === 'sell').reduce((sum, t) => sum + t.quantity, 0);
-    
-    // 初期価格を取得（設定から）
-    const initialPrice = 100; // デモ版の初期価格
-    
-    // 価格変動 = (買い注文数 - 売り注文数) × 係数
-    // 初期価格から累積変動を計算
-    const priceChange = (buyCount - sellCount) * stock.coefficient;
-    const newPrice = Math.max(1, initialPrice + priceChange); // 最低1p
-
-    // チャートデータに追加
-    const newChartData = [
-      ...stock.chartSeries,
-      {
-        time: new Date().toISOString().split('T')[0],
-        price: Math.round(newPrice * 10) / 10,
-      },
-    ].slice(-30); // 最新30件のみ保持
-
-    const updatedStocks = stocks.map((s) =>
-      s.symbol === symbol
-        ? {
-            ...s,
-            price: Math.round(newPrice * 10) / 10,
-            chartSeries: newChartData,
-          }
-        : s
-    );
-
-    set({ stocks: updatedStocks });
   },
 
   // リアルタイム同期用：株価を更新
@@ -327,8 +311,14 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
 
   // カードを購入
-  buyCard: (cardId: string) => {
+  buyCard: async (cardId: string) => {
     const { user, cards } = get();
+    const userId = getLocalUserId();
+    if (!userId) {
+      alert('ログインが必要です');
+      return;
+    }
+
     const card = cards.find((c) => c.id === cardId);
     if (!card) {
       alert('カードが見つかりません');
@@ -345,9 +335,61 @@ export const useGameStore = create<GameState>((set, get) => ({
       return;
     }
 
-    const updatedCards = cards.map((c) =>
-      c.id === cardId ? { ...c, purchased: true } : c
-    );
+    // API経由でカードを購入
+    const response = await fetch('/api/cards', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, cardId, action: 'buy' }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const errorMessage = errorData.error || 'カードの購入に失敗しました';
+      alert(errorMessage);
+      return;
+    }
+
+    const result = await response.json();
+
+    // 順位差表示カードの場合は、その時点の情報をlocalStorageに保存
+    if (cardId === 'rank-difference') {
+      try {
+        const rankingsRes = await fetch(`/api/rankings?userId=${userId}`);
+        if (rankingsRes.ok) {
+          const rankingsData = await rankingsRes.json();
+          const eventData = {
+            userRank: rankingsData.userRank,
+            totalUsers: rankingsData.totalUsers,
+            upperRank: rankingsData.upperRank || null,
+            lowerRank: rankingsData.lowerRank || null,
+            allRankings: null,
+          };
+          
+          // localStorageに保存
+          const cardDataKey = `rankDifferenceCardData_${userId}`;
+          const cardData = {
+            usedAt: { minutes: 0, seconds: 0 }, // 後で再計算される
+            usedAtTimestamp: new Date().toISOString(),
+            rankData: eventData,
+          };
+          localStorage.setItem(cardDataKey, JSON.stringify(cardData));
+        }
+      } catch (error) {
+        console.error('Failed to save rank difference card data:', error);
+      }
+    }
+
+    // ストアを更新（購入時はactive: false）
+    const updatedCards = cards.map((c) => {
+      if (c.id === cardId) {
+        return {
+          ...c,
+          purchased: true,
+          active: false, // 購入時は未発動
+        };
+      }
+      return c;
+    });
 
     set({
       user: {
@@ -356,35 +398,61 @@ export const useGameStore = create<GameState>((set, get) => ({
       },
       cards: updatedCards,
     });
+
+    // ユーザー情報を再読み込み
+    await get().loadInitialData(userId);
   },
 
-  // カードを使用
-  useCard: (cardId: string) => {
+  // カードを発動
+  activateCard: async (cardId: string) => {
     const { cards } = get();
-    const card = cards.find((c) => c.id === cardId);
-    if (!card || !card.purchased) {
-      alert('カードが購入されていません');
+    const userId = getLocalUserId();
+    if (!userId) {
+      alert('ログインが必要です');
       return;
     }
 
-    const updatedCards = cards.map((c) => {
-      if (c.id === cardId) {
-        if (cardId === 'debt-reversal') {
-          // 負債反転カード：5分間有効
-          return {
-            ...c,
-            active: true,
-            expiresAt: Date.now() + 5 * 60 * 1000,
-          };
-        } else {
-          // その他のカード：1回使用で無効化
-          return { ...c, active: true };
-        }
-      }
-      return c;
+    const card = cards.find((c) => c.id === cardId);
+    if (!card) {
+      alert('カードが見つかりません');
+      return;
+    }
+
+    if (!card.purchased) {
+      alert('このカードは購入されていません');
+      return;
+    }
+
+    if (card.active) {
+      alert('既に発動中です');
+      return;
+    }
+
+    // API経由でカードを発動
+    const response = await fetch('/api/cards', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, cardId, action: 'activate' }),
     });
 
-    set({ cards: updatedCards });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const errorMessage = errorData.error || 'カードの発動に失敗しました';
+      alert(errorMessage);
+      return;
+    }
+
+    const result = await response.json();
+
+    // ストアを更新
+    set({
+      cards: cards.map((c) =>
+        c.id === cardId ? { ...c, active: true, expiresAt: result.expiresAt ? new Date(result.expiresAt).getTime() : undefined } : c
+      ),
+    });
+
+    // 初期データを再ロード（カード状態を最新化）
+    await get().loadInitialData(userId);
   },
 
   // 銘柄を購入（API経由）
@@ -407,11 +475,13 @@ export const useGameStore = create<GameState>((set, get) => ({
         }),
       });
 
-      const data = await response.json();
-
       if (!response.ok) {
-        alert(data.error || '取引に失敗しました');
-        return;
+        const errorData = await response.json().catch(() => ({}))
+        const errorMessage = errorData.error || '取引に失敗しました'
+        const errorDetails = errorData.details ? `: ${errorData.details}` : ''
+        console.error('Trade error:', errorMessage, errorDetails)
+        alert(`${errorMessage}${errorDetails}`)
+        return
       }
 
       // 成功したらクールダウンを更新
@@ -445,12 +515,16 @@ export const useGameStore = create<GameState>((set, get) => ({
         }),
       });
 
-      const data = await response.json();
-
       if (!response.ok) {
-        alert(data.error || '取引に失敗しました');
-        return;
+        const errorData = await response.json().catch(() => ({}))
+        const errorMessage = errorData.error || '取引に失敗しました'
+        const errorDetails = errorData.details ? `: ${errorData.details}` : ''
+        console.error('Trade error:', errorMessage, errorDetails)
+        alert(`${errorMessage}${errorDetails}`)
+        return
       }
+
+      const data = await response.json();
 
       // 成功したらクールダウンを更新
       set({ lastTradeTime: Date.now() });
@@ -463,14 +537,20 @@ export const useGameStore = create<GameState>((set, get) => ({
     }
   },
 
-  // 保険を発動
-  activateInsurance: () => {
+  // 保険を発動（API経由）
+  activateInsurance: async () => {
+    const userId = getLocalUserId();
+    if (!userId) {
+      alert('ログインが必要です');
+      return;
+    }
+
     const { user } = get();
     const totalAsset = get().calculateTotalAsset();
 
     // 保険発動条件チェック（総資産が1000p以下）
-    if (totalAsset > 1000) {
-      alert('保険は総資産が1000p以下の場合のみ発動可能です');
+    if (totalAsset > gameRules.insurance.threshold) {
+      alert(`保険は総資産が${gameRules.insurance.threshold}p以下の場合のみ発動可能です`);
       return;
     }
 
@@ -480,18 +560,27 @@ export const useGameStore = create<GameState>((set, get) => ({
       return;
     }
 
-    // 保険発動（2000p付与）
-    const newCash = user.cash + 2000;
-    const newTotalAsset = get().calculateTotalAsset() + 2000;
+    try {
+      const response = await fetch('/api/insurance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      });
 
-    set({
-      user: {
-        ...user,
-        cash: newCash,
-        insuranceUsed: true,
-        totalAsset: newTotalAsset,
-      },
-    });
+      const data = await response.json();
+
+      if (!response.ok) {
+        alert(data.error || '保険発動に失敗しました');
+        return;
+      }
+
+      // 成功したらユーザー情報を更新
+      await get().loadInitialData(userId);
+      alert(`保険を発動しました！${gameRules.insurance.amount}pが付与されました。`);
+    } catch (error) {
+      console.error('Activate insurance error:', error);
+      alert('保険発動に失敗しました');
+    }
   },
 }));
 

@@ -49,7 +49,6 @@ export default function LoginPage() {
         body: JSON.stringify({ 
           username: trimmed,
           password: trimmedPassword,
-          action: "login",
         }),
       });
       const json = await res.json();
