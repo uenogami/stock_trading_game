@@ -27,33 +27,19 @@ export function useRealtimeSync() {
           schema: "public",
           table: "stocks",
         },
-        async (payload) => {
+        (payload) => {
           const updatedStock = payload.new as any;
           const { stocks, updateStockFromRealtime } = useGameStore.getState();
           const existingStock = stocks.find((s) => s.symbol === updatedStock.symbol);
           
-          // チャートデータを更新（取引履歴に基づく最新データを取得）
-          let chartSeries = existingStock?.chartSeries || [];
-          try {
-            const stocksRes = await fetch('/api/stocks');
-            if (stocksRes.ok) {
-              const stocksData = await stocksRes.json();
-              const latestStock = stocksData.stocks?.find((s: any) => s.symbol === updatedStock.symbol);
-              if (latestStock?.chartSeries) {
-                chartSeries = latestStock.chartSeries;
-              }
-            }
-          } catch (error) {
-            // エラー時は既存のチャートデータを保持
-          }
-          
+          // 既存のチャートデータと説明を保持（リアルタイム更新では価格のみ更新）
           updateStockFromRealtime({
             symbol: updatedStock.symbol,
             name: updatedStock.name,
             price: updatedStock.price,
             change24h: updatedStock.change24h || 0,
             volume: updatedStock.volume || 0,
-            chartSeries: chartSeries,
+            chartSeries: existingStock?.chartSeries || [],
             coefficient: updatedStock.coefficient,
             maxHoldings: updatedStock.max_holdings,
             description: existingStock?.description || "",

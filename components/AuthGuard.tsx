@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, type MutableRefObject } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { getLocalUserId, getLocalUsername } from "@/lib/localAuth";
 import { useGameStore } from "@/store/useGameStore";
@@ -19,10 +19,30 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   // ゲーム進行時間を監視し、イベントをトリガー
   const syncIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const updateIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const hasTriggered10MinEventRef = useRef<boolean>(
+    typeof window !== 'undefined' ? localStorage.getItem('hasTriggered10MinEvent') === 'true' : false
+  );
+  const isTriggering10MinEventRef = useRef<boolean>(false);
+  const hasTriggered20MinEventRef = useRef<boolean>(
+    typeof window !== 'undefined' ? localStorage.getItem('hasTriggered20MinEvent') === 'true' : false
+  );
+  const isTriggering20MinEventRef = useRef<boolean>(false);
+  const hasTriggered30MinEventRef = useRef<boolean>(
+    typeof window !== 'undefined' ? localStorage.getItem('hasTriggered30MinEvent') === 'true' : false
+  );
+  const isTriggering30MinEventRef = useRef<boolean>(false);
   const hasTriggered40MinEventRef = useRef<boolean>(
     typeof window !== 'undefined' ? localStorage.getItem('hasTriggered40MinEvent') === 'true' : false
   );
   const isTriggering40MinEventRef = useRef<boolean>(false);
+  const hasTriggered50MinEventRef = useRef<boolean>(
+    typeof window !== 'undefined' ? localStorage.getItem('hasTriggered50MinEvent') === 'true' : false
+  );
+  const isTriggering50MinEventRef = useRef<boolean>(false);
+  const hasTriggered55MinEventRef = useRef<boolean>(
+    typeof window !== 'undefined' ? localStorage.getItem('hasTriggered55MinEvent') === 'true' : false
+  );
+  const isTriggering55MinEventRef = useRef<boolean>(false);
   const hasTriggeredGameEndRef = useRef<boolean>(
     typeof window !== 'undefined' ? localStorage.getItem('hasTriggeredGameEnd') === 'true' : false
   );
@@ -48,10 +68,40 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
           if (!currentGameStartTime || data.hasTrades) {
             setGameStartTime(new Date(data.gameStartTime));
             if (data.hasTrades) {
+              if (hasTriggered10MinEventRef.current) {
+                hasTriggered10MinEventRef.current = false;
+                if (typeof window !== 'undefined') {
+                  localStorage.removeItem('hasTriggered10MinEvent');
+                }
+              }
+              if (hasTriggered20MinEventRef.current) {
+                hasTriggered20MinEventRef.current = false;
+                if (typeof window !== 'undefined') {
+                  localStorage.removeItem('hasTriggered20MinEvent');
+                }
+              }
+              if (hasTriggered30MinEventRef.current) {
+                hasTriggered30MinEventRef.current = false;
+                if (typeof window !== 'undefined') {
+                  localStorage.removeItem('hasTriggered30MinEvent');
+                }
+              }
               if (hasTriggered40MinEventRef.current) {
                 hasTriggered40MinEventRef.current = false;
                 if (typeof window !== 'undefined') {
                   localStorage.removeItem('hasTriggered40MinEvent');
+                }
+              }
+              if (hasTriggered50MinEventRef.current) {
+                hasTriggered50MinEventRef.current = false;
+                if (typeof window !== 'undefined') {
+                  localStorage.removeItem('hasTriggered50MinEvent');
+                }
+              }
+              if (hasTriggered55MinEventRef.current) {
+                hasTriggered55MinEventRef.current = false;
+                if (typeof window !== 'undefined') {
+                  localStorage.removeItem('hasTriggered55MinEvent');
                 }
               }
               if (hasTriggeredGameEndRef.current) {
@@ -99,85 +149,128 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         const seconds = Math.floor(elapsed % 60);
         updateElapsedTime(minutes, seconds);
 
-        // 40分経過時の現金1.2倍イベント
-        const eventTimeMinutes = 40;
-        if (elapsed >= eventTimeMinutes * 60 && !hasTriggered40MinEventRef.current && !isTriggering40MinEventRef.current) {
-          isTriggering40MinEventRef.current = true;
-          hasTriggered40MinEventRef.current = true;
+        // イベントトリガー共通処理
+        const triggerEvent = async (
+          apiPath: string,
+          eventKey: string,
+          hasTriggeredRef: MutableRefObject<boolean>,
+          isTriggeringRef: MutableRefObject<boolean>,
+          onSuccess?: () => void
+        ) => {
+          if (hasTriggeredRef.current || isTriggeringRef.current) return;
+          
+          isTriggeringRef.current = true;
+          hasTriggeredRef.current = true;
           if (typeof window !== 'undefined') {
-            localStorage.setItem('hasTriggered40MinEvent', 'true');
+            localStorage.setItem(eventKey, 'true');
           }
           
-          fetch('/api/events/cash-multiplier')
-            .then((res) => res.ok ? res.json() : Promise.reject(new Error(`API error: ${res.status}`)))
-            .then(async (data) => {
-              if (data.success || data.usersUpdated > 0 || data.message === 'Event already applied') {
-                const userId = user.id;
-                if (userId) {
-                  try {
-                    const userRes = await fetch(`/api/users/${userId}`);
-                    if (userRes.ok) {
-                      const userData = await userRes.json();
-                      useGameStore.setState({
-                        user: { ...user, cash: userData.user.cash },
-                      });
-                    }
-                  } catch (error) {
-                    // エラーは無視（リアルタイム同期で反映される）
+          try {
+            const res = await fetch(apiPath);
+            if (!res.ok) throw new Error(`API error: ${res.status}`);
+            const data = await res.json();
+            
+            if (data.success || data.usersUpdated > 0 || data.message?.includes('already applied')) {
+              // ユーザーデータを再取得（リアルタイム同期のフォールバック）
+              const userId = user.id;
+              if (userId) {
+                try {
+                  const userRes = await fetch(`/api/users/${userId}`);
+                  if (userRes.ok) {
+                    const userData = await userRes.json();
+                    useGameStore.setState({
+                      user: { ...user, cash: userData.user.cash },
+                    });
                   }
+                } catch (error) {
+                  // エラーは無視（リアルタイム同期で反映される）
                 }
               }
-            })
-            .catch((error) => {
-              console.error('[Event] 40分イベントAPIエラー:', error);
-            })
-            .finally(() => {
-              isTriggering40MinEventRef.current = false;
-            });
+              onSuccess?.();
+            }
+          } catch (error) {
+            console.error(`[Event] ${apiPath} エラー:`, error);
+          } finally {
+            isTriggeringRef.current = false;
+          }
+        };
+
+        // 10分経過時：順位確認イベント
+        if (elapsed >= 10 * 60) {
+          triggerEvent(
+            '/api/events/rank-check?time=10',
+            'hasTriggered10MinEvent',
+            hasTriggered10MinEventRef,
+            isTriggering10MinEventRef
+          );
+        }
+
+        // 20分経過時：順位差確認イベント
+        if (elapsed >= 20 * 60) {
+          triggerEvent(
+            '/api/events/rank-check?time=20',
+            'hasTriggered20MinEvent',
+            hasTriggered20MinEventRef,
+            isTriggering20MinEventRef
+          );
+        }
+
+        // 30分経過時：全体順位確認イベント
+        if (elapsed >= 30 * 60) {
+          triggerEvent(
+            '/api/events/rank-check?time=30',
+            'hasTriggered30MinEvent',
+            hasTriggered30MinEventRef,
+            isTriggering30MinEventRef
+          );
+        }
+
+        // 40分経過時の現金1.2倍イベント
+        if (elapsed >= 40 * 60) {
+          triggerEvent(
+            '/api/events/cash-multiplier',
+            'hasTriggered40MinEvent',
+            hasTriggered40MinEventRef,
+            isTriggering40MinEventRef
+          );
+        }
+
+        // 50分経過時：順位・順位差確認イベント
+        if (elapsed >= 50 * 60) {
+          triggerEvent(
+            '/api/events/rank-check?time=50',
+            'hasTriggered50MinEvent',
+            hasTriggered50MinEventRef,
+            isTriggering50MinEventRef
+          );
+        }
+
+        // 55分経過時（残り5分）のラストスパート通知
+        if (elapsed >= 55 * 60) {
+          triggerEvent(
+            '/api/events/last-spurt',
+            'hasTriggered55MinEvent',
+            hasTriggered55MinEventRef,
+            isTriggering55MinEventRef
+          );
         }
 
         // 60分経過時のゲーム終了処理
-        const gameEndMinutes = 60;
-        if (elapsed >= gameEndMinutes * 60 && !hasTriggeredGameEndRef.current && !isTriggeringGameEndRef.current) {
-          isTriggeringGameEndRef.current = true;
-          hasTriggeredGameEndRef.current = true;
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('hasTriggeredGameEnd', 'true');
-          }
-          
-          fetch('/api/events/game-end')
-            .then((res) => res.ok ? res.json() : Promise.reject(new Error(`API error: ${res.status}`)))
-            .then(async (data) => {
-              if (data.success || data.message === 'Game end event already applied') {
-                // ゲーム終了後、ユーザーデータを再取得
-                const userId = user.id;
-                if (userId) {
-                  try {
-                    const userRes = await fetch(`/api/users/${userId}`);
-                    if (userRes.ok) {
-                      const userData = await userRes.json();
-                      useGameStore.setState({
-                        user: { ...user, cash: userData.user.cash },
-                      });
-                    }
-                  } catch (error) {
-                    // エラーは無視（リアルタイム同期で反映される）
-                  }
-                }
-                // 結果ページにリダイレクト（現在のパスが結果ページでない場合のみ）
-                if (typeof window !== 'undefined' && !window.location.pathname.includes('/results')) {
-                  setTimeout(() => {
-                    window.location.href = '/results';
-                  }, 2000); // 2秒後にリダイレクト
-                }
+        if (elapsed >= 60 * 60) {
+          triggerEvent(
+            '/api/events/game-end',
+            'hasTriggeredGameEnd',
+            hasTriggeredGameEndRef,
+            isTriggeringGameEndRef,
+            () => {
+              // 結果ページにリダイレクト
+              if (typeof window !== 'undefined' && !window.location.pathname.includes('/results')) {
+                setTimeout(() => {
+                  window.location.href = '/results';
+                }, 2000);
               }
-            })
-            .catch((error) => {
-              console.error('[Event] ゲーム終了イベントAPIエラー:', error);
-            })
-            .finally(() => {
-              isTriggeringGameEndRef.current = false;
-            });
+            }
+          );
         }
       };
 

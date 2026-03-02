@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { gameRules } from '@/config'
+import { isGameEnded } from '@/lib/gameUtils'
 
 // カード購入
 export async function POST(request: NextRequest) {
@@ -32,21 +33,8 @@ export async function POST(request: NextRequest) {
 
     if (action === 'buy') {
       // ゲーム終了チェック（60分経過後はカード購入不可）
-      const { data: firstTrade } = await supabase
-        .from('trades')
-        .select('created_at')
-        .order('created_at', { ascending: true })
-        .limit(1)
-        .maybeSingle()
-
-      if (firstTrade) {
-        const gameStartTime = new Date(firstTrade.created_at)
-        const elapsedSeconds = (Date.now() - gameStartTime.getTime()) / 1000
-        const gameEndMinutes = 60
-
-        if (elapsedSeconds >= gameEndMinutes * 60) {
-          return NextResponse.json({ error: 'ゲームは終了しました' }, { status: 400 })
-        }
+      if (await isGameEnded(supabase)) {
+        return NextResponse.json({ error: 'ゲームは終了しました' }, { status: 400 })
       }
 
       // 既に購入済みかチェック

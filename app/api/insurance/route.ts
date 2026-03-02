@@ -75,14 +75,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // タイムラインに自動投稿
-    await supabase.from('timeline_posts').insert({
-      user_id: userId,
-      user_name: userData.name,
-      type: 'claim',
-      text: `${userData.name}が保険を発動しました（+${gameRules.insurance.amount}p）`,
-    })
-
     return NextResponse.json({
       success: true,
       user: {
